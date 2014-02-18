@@ -1,6 +1,6 @@
-diff -ur Trac-1.0.1-py2.7.egg.orig/trac/ticket/api.py Trac-1.0.1-py2.7.egg/trac/ticket/api.py
---- Trac-1.0.1-py2.7.egg.orig/trac/ticket/api.py	2014-02-10 13:26:26.618699400 +0100
-+++ Trac-1.0.1-py2.7.egg/trac/ticket/api.py	2014-02-10 13:27:10.332199600 +0100
+diff -u -r Trac-1.0.1-py2.7.egg.orig/trac/ticket/api.py Trac-1.0.1-py2.7.egg/trac/ticket/api.py
+--- Trac-1.0.1-py2.7.egg.orig/trac/ticket/api.py	2014-02-18 12:15:16.220649000 +0100
++++ Trac-1.0.1-py2.7.egg/trac/ticket/api.py	2014-02-10 12:06:26.795000000 +0100
 @@ -29,6 +29,19 @@
  from trac.util.translation import _, N_, gettext
  from trac.wiki import IWikiSyntaxProvider, WikiParser
@@ -21,55 +21,66 @@ diff -ur Trac-1.0.1-py2.7.egg.orig/trac/ticket/api.py Trac-1.0.1-py2.7.egg/trac/
  
  class ITicketActionController(Interface):
      """Extension point interface for components willing to participate
-diff -ur Trac-1.0.1-py2.7.egg.orig/trac/ticket/web_ui.py Trac-1.0.1-py2.7.egg/trac/ticket/web_ui.py
---- Trac-1.0.1-py2.7.egg.orig/trac/ticket/web_ui.py	2014-02-10 13:26:26.840712100 +0100
-+++ Trac-1.0.1-py2.7.egg/trac/ticket/web_ui.py	2014-02-10 13:27:10.442205900 +0100
-@@ -34,7 +34,7 @@
-     get_resource_shortname
+diff -u -r Trac-1.0.1-py2.7.egg.orig/trac/ticket/notification.py Trac-1.0.1-py2.7.egg/trac/ticket/notification.py
+--- Trac-1.0.1-py2.7.egg.orig/trac/ticket/notification.py	2014-02-18 12:15:16.248650600 +0100
++++ Trac-1.0.1-py2.7.egg/trac/ticket/notification.py	2014-02-11 17:58:36.570000000 +0100
+@@ -175,7 +175,7 @@
+         if not self.newticket and modtime:  # Ticket change
+             from trac.ticket.web_ui import TicketModule
+             for change in TicketModule(self.env).grouped_changelog_entries(
+-                                                ticket, when=modtime):
++                                                None, ticket, when=modtime):
+                 if not change['permanent']: # attachment with same time...
+                     continue
+                 author = change['author']
+diff -u -r Trac-1.0.1-py2.7.egg.orig/trac/ticket/web_ui.py Trac-1.0.1-py2.7.egg/trac/ticket/web_ui.py
+--- Trac-1.0.1-py2.7.egg.orig/trac/ticket/web_ui.py	2014-02-18 12:15:16.288652900 +0100
++++ Trac-1.0.1-py2.7.egg/trac/ticket/web_ui.py	2014-02-11 17:59:46.383000000 +0100
+@@ -35,6 +35,7 @@
  )
  from trac.search import ISearchSource, search_to_sql, shorten_result
--from trac.ticket.api import TicketSystem, ITicketManipulator
-+from trac.ticket.api import TicketSystem, ITicketManipulator, ITicketChangelogFilter
+ from trac.ticket.api import TicketSystem, ITicketManipulator
++from trac.ticket.api import ITicketChangelogFilter
  from trac.ticket.model import Milestone, Ticket, group_milestones
  from trac.ticket.notification import TicketNotifyEmail
  from trac.timeline.api import ITimelineEventProvider
-@@ -70,6 +70,7 @@
+@@ -70,6 +71,9 @@
      implements(IContentConverter, INavigationContributor, IRequestHandler,
                 ISearchSource, ITemplateProvider, ITimelineEventProvider)
  
++    # ADD THE EXTENSION POINT FOR IticketChangelogFilter
 +    changelog_filters = ExtensionPoint(ITicketChangelogFilter)
++
      ticket_manipulators = ExtensionPoint(ITicketManipulator)
  
      timeline_details = BoolOption('timeline', 'ticket_show_details', 'false',
-@@ -1685,7 +1686,8 @@
+@@ -1685,7 +1689,7 @@
          in a `dict` object.
          """
          attachment_realm = ticket.resource.child('attachment')
 -        for group in self.grouped_changelog_entries(ticket, when=when):
-+        # NOTE -- ADDED req as parameter in the call
 +        for group in self.grouped_changelog_entries(req, ticket, when=when):
              t = ticket.resource(version=group.get('cnum', None))
              if 'TICKET_VIEW' in req.perm(t):
                  self._render_property_changes(req, ticket, group['fields'], t)
-@@ -1767,7 +1769,8 @@
+@@ -1767,7 +1771,7 @@
                                  old=tag.em(old), new=tag.em(new))
          return rendered
  
 -    def grouped_changelog_entries(self, ticket, db=None, when=None):
-+    # NOTICE THE 'req' parameter
 +    def grouped_changelog_entries(self, req, ticket, db=None, when=None):
          """Iterate on changelog entries, consolidating related changes
          in a `dict` object.
  
-@@ -1776,6 +1779,11 @@
+@@ -1776,6 +1780,11 @@
          """
          field_labels = TicketSystem(self.env).get_ticket_field_labels()
          changelog = ticket.get_changelog(when=when)
 +        # BEGIN FILTERING OF CHANGELOG ENTRIES
-+        for clogfilter in self.changelog_filters:
-+            changelog = clogfilter.changelog_filter(req, changelog)
++        if req:
++            for clogfilter in self.changelog_filters:
++                changelog = clogfilter.changelog_filter(req, changelog)
 +        # END FILTERING OF CHANGELOG ENTRIES
-+
          autonum = 0 # used for "root" numbers
          last_uid = current = None
          for date, author, field, old, new, permanent in changelog:
